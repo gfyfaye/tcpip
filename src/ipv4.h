@@ -2,6 +2,10 @@
 #include <cstdint>
 #include <iostream>
 
+
+#include "checksum.h"
+#include "udp.h"
+
 #pragma pack(push, 1)
 
 struct Ipv4Header {
@@ -18,43 +22,7 @@ struct Ipv4Header {
     //options go here
 };
 
-// Byte 0:     Version (4 bits) | IHL (4 bits)
-// Byte 1:     DSCP/ECN (not important for you yet)
-// Bytes 2-3:  Total Length (16 bits)
-// Bytes 4-5:  Identification (16 bits)
-// Bytes 6-7:  Flags (3 bits) | Fragment Offset (13 bits)
-// Byte 8:     TTL
-// Byte 9:     Protocol
-// Bytes 10-11: Header Checksum
-// Bytes 12-15: Source IP
-// Bytes 16-19: Destination IP
-// [optional: Options, if IHL > 5]
-
-bool check_checksum(const uint8_t* header, size_t header_len) {
-    // steps
-    // 1. treats the IPv4 header as a seq of 16-bit unsigned ints
-    // 2. set the checksum field itself to 0x0000 during init generation
-    // 3. sum all 16-bit words into a 32-bit int (so overflow carries aren’t lost)
-    // 4. fold carries: add the upper 16bits back into the lower 16 bits til no overflow remains
-    // verification: 
-    // sum all 16-bit words + the received checksum field
-    // if packet is uncorrupted, result of 1’s complement addition over the entire header will equal 0xFFFF
-    uint32_t sum = 0;
-
-    for (int i=0; i< header_len/2; i++) {
-        //
-        uint16_t word = (header[i*2] << 8) | header[i*2+1];
-        sum += word;
-    }
-
-    while (sum >> 16) {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-
-    return sum == 0xFFFF;
-}
-
-void handle_ipv4 (const uint8_t* packet, ssize_t n) {
+void handle_ipv4 (const uint8_t* packet, ssize_t n, UdpSocketManager& socket_manager) {
 
     if ( n < static_cast<ssize_t>(sizeof(Ipv4Header))) {
         std::cout << "Packet too short to contain an IPv4 Packet\n" << std::endl;
@@ -82,9 +50,13 @@ void handle_ipv4 (const uint8_t* packet, ssize_t n) {
         return;
     }
 
-    std::cout << "ttl: " << ip->ttl << std::endl;
-    std::cout << "protocol: " << ip->protocol << std::endl;
-     std::cout << "real length: " << real_length << std::endl;
+    std::cout << "ttl: " << static_cast<int>(ip->ttl) << std::endl;
+    std::cout << "protocol: " << static_cast<int>(ip->protocol) << std::endl;
+    std::cout << "real length: " << real_length << std::endl;
     std::cout << "source IP: " << ip->sourceIP << std::endl;
     std::cout << "dest IP: " << ip->destIP << std::endl;
+
+    if (ip->protocol == 17) {
+        handle_udp(packet + real_length, n - static_cast<ssize_t>(real_length), socket_manager);
+    }
 }
