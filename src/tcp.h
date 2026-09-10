@@ -76,11 +76,11 @@ namespace std {
 constexpr size_t WINDOW_CAPACITY = 4096;
 using ConnectionTable = std::unordered_map<ConnectionKey, Tcb>;
 
-void send_tcp_reply(int fd, EthernetHeader* eth, Ipv4Header* ip, TcpHeader* tcp, uint8_t* local_mac,
+void send_tcp_reply(int fd, EthernetHeader* eth, Ipv4Header* ip, TcpHeader* tcp, Tcb& tcb, uint8_t* local_mac,
                      uint32_t src_ip, uint32_t dest_ip, uint8_t reply_flags,
                      const uint8_t* payload_ptr, ssize_t payload_length) {
     tcp->flags = reply_flags;
-
+    
     size_t total_header_size = sizeof(EthernetHeader) + sizeof(Ipv4Header) + sizeof(TcpHeader) + payload_length;
     eth->ethertype = htons(0x0800);
 
@@ -102,13 +102,17 @@ void send_tcp_reply(int fd, EthernetHeader* eth, Ipv4Header* ip, TcpHeader* tcp,
     tcp->dest_port = prev_src_port;
     tcp->checksum = 0;
 
+    tcp->seq_num = htonl(tcb.SND_UNA);
+    tcp->ack_num = htonl(tcb.RCV_NXT);
+    tcp->window_size = htons(tcb.RCV_WND);
+
     TcpPseudoHeader pseudo_header {dest_ip, src_ip, 0, 6, static_cast<uint16_t>(sizeof(TcpHeader) + payload_length)};
     uint32_t pseudo_sum = sum_words(reinterpret_cast<const uint8_t*>(&pseudo_header), sizeof(TcpPseudoHeader), 0);
     uint32_t tcp_and_pseudo_sum = sum_words(reinterpret_cast<const uint8_t*>(tcp), sizeof(TcpHeader), pseudo_sum);
     uint32_t all_sum = sum_words(payload_ptr, payload_length, tcp_and_pseudo_sum);
 
     tcp->checksum = fold_and_generate(all_sum);
-
+    
     write(fd, eth, total_header_size);
 }
 
@@ -186,6 +190,6 @@ void handle_tcp (int fd, uint8_t* packet, ssize_t n, uint32_t src_ip, uint32_t d
         connection_table.erase(key);
     }
     if (should_reply) {
-        send_tcp_reply(fd, eth, ip, tcp, local_mac, src_ip, dest_ip, reply_flags, payload_ptr, payload_length);
+        send_tcp_reply(fd, eth, ip, tcp, tcb, local_mac, src_ip, dest_ip, reply_flags, payload_ptr, payload_length);
     }
 }
