@@ -94,8 +94,10 @@ void send_tcp_reply(int fd, EthernetHeader* eth, Ipv4Header* ip, TcpHeader* tcp,
     ip->sourceIP = ip->destIP;
     ip->destIP = prev_src_ip;
     ip->checksum = 0;
-    ip->checksum = fold_and_generate(sum_words(reinterpret_cast<uint8_t*>(ip), sizeof(Ipv4Header), 0));
     ip->protocol = 6;
+
+    //debug - need to flip bc fold and generate builds in big endian and our machine is little endian so it will store the number flipped
+    ip->checksum = htons(fold_and_generate(sum_words(reinterpret_cast<uint8_t*>(ip), sizeof(Ipv4Header), 0)));
 
     uint16_t prev_src_port = tcp->src_port;
     tcp->src_port = tcp->dest_port;
@@ -106,12 +108,12 @@ void send_tcp_reply(int fd, EthernetHeader* eth, Ipv4Header* ip, TcpHeader* tcp,
     tcp->ack_num = htonl(tcb.RCV_NXT);
     tcp->window_size = htons(tcb.RCV_WND);
 
-    TcpPseudoHeader pseudo_header {dest_ip, src_ip, 0, 6, static_cast<uint16_t>(sizeof(TcpHeader) + payload_length)};
+    TcpPseudoHeader pseudo_header {dest_ip, src_ip, 0, 6, htons(static_cast<uint16_t>(sizeof(TcpHeader) + payload_length))};
     uint32_t pseudo_sum = sum_words(reinterpret_cast<const uint8_t*>(&pseudo_header), sizeof(TcpPseudoHeader), 0);
     uint32_t tcp_and_pseudo_sum = sum_words(reinterpret_cast<const uint8_t*>(tcp), sizeof(TcpHeader), pseudo_sum);
     uint32_t all_sum = sum_words(payload_ptr, payload_length, tcp_and_pseudo_sum);
 
-    tcp->checksum = fold_and_generate(all_sum);
+    tcp->checksum = htons(fold_and_generate(all_sum));
     
     write(fd, eth, total_header_size);
 }
